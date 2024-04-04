@@ -3,6 +3,8 @@ const bodyParser = require("body-parser");
 const express = require("express");
 const cors = require("cors");
 const startConnection = require("./server.js");
+const dns = require("dns");
+const { URL: URLModule } = require("url");
 const URL = require("./model/index.js");
 const app = express();
 
@@ -33,12 +35,24 @@ async function generateShortURL() {
   }
 }
 
+function checkURLValidity(url, res) {
+  const hostname = new URLModule(url).hostname;
+
+  dns.lookup(hostname, (err, address) => {
+    if (err) {
+      return false;
+    } else {
+      console.log(`${hostname} is a valid URL with IP address ${address}`);
+    }
+  });
+}
+
 async function findLongURL(longURL) {
   try {
     const data = await URL.findOne({ long: longURL });
     return data;
   } catch (error) {
-    re.status(500).json({ error: "Communication Failed with the Server" });
+    res.status(500).json({ error: "Communication Failed with the Server" });
   }
 }
 async function findShortURL(suffix) {
@@ -52,6 +66,12 @@ async function findShortURL(suffix) {
 
 app.post("/api/shorturl", async (req, res) => {
   const originalURL = req.body.url;
+  const valid = checkURLValidity(originalURL, res);
+  if (!valid) {
+    console.log("URL not Stored");
+    return res.send({ error: "Invalid URL" });
+  }
+
   const urlData = await findLongURL(originalURL);
   if (urlData) {
     res.send({
@@ -82,7 +102,7 @@ app.post("/api/shorturl", async (req, res) => {
   }
 });
 
-app.get("/:suffix", async (req, res) => {
+app.get("/api/shorturl/:suffix", async (req, res) => {
   const { suffix } = req.params;
   const data = await findShortURL(suffix);
   if (data) {
