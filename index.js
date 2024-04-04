@@ -3,9 +3,12 @@ const bodyParser = require("body-parser");
 const express = require("express");
 const cors = require("cors");
 const startConnection = require("./server.js");
-const dns = require("dns");
 const { URL: URLModule } = require("url");
 const URL = require("./model/index.js");
+const dns = require("dns");
+const { promisify } = require("util");
+
+const dnsLookup = promisify(dns.lookup);
 const app = express();
 
 // Basic Configuration
@@ -35,16 +38,17 @@ async function generateShortURL() {
   }
 }
 
-function checkURLValidity(url, res) {
-  const hostname = new URLModule(url).hostname;
+async function checkURLValidity(url) {
+  try {
+    const hostname = new URLModule(url).hostname;
 
-  dns.lookup(hostname, (err, address) => {
-    if (err) {
-      return false;
-    } else {
-      console.log(`${hostname} is a valid URL with IP address ${address}`);
-    }
-  });
+    const { address } = await dnsLookup(hostname);
+
+    console.log(`${hostname} is a valid URL with IP address ${address}`);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 async function findLongURL(longURL) {
@@ -52,7 +56,7 @@ async function findLongURL(longURL) {
     const data = await URL.findOne({ long: longURL });
     return data;
   } catch (error) {
-    res.status(500).json({ error: "Communication Failed with the Server" });
+    throw new Error("Communication Failed with the Server");
   }
 }
 async function findShortURL(suffix) {
@@ -60,16 +64,17 @@ async function findShortURL(suffix) {
     const data = await URL.findOne({ suffix });
     return data;
   } catch (error) {
-    re.status(500).json({ error: "Communication Failed with the Server" });
+    throw new Error("Communication Failed with the Server");
   }
 }
 
 app.post("/api/shorturl", async (req, res) => {
   const originalURL = req.body.url;
-  const valid = checkURLValidity(originalURL, res);
+  const valid = await checkURLValidity(originalURL);
+
   if (!valid) {
-    console.log("URL not Stored");
-    return res.send({ error: "Invalid URL" });
+    console.log("url not Stored");
+    return res.send({ error: "Invalid url" });
   }
 
   const urlData = await findLongURL(originalURL);
@@ -80,7 +85,8 @@ app.post("/api/shorturl", async (req, res) => {
     });
   } else {
     const suffix = await generateShortURL();
-    const short = req.protocol + "://" + req.get("host") + `/${suffix}`;
+    const short =
+      req.protocol + "://" + req.get("host") + `/api/shorturl/${suffix}`;
 
     try {
       const newURL = new URL({
